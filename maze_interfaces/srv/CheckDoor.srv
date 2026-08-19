@@ -1,0 +1,4 @@
+string door_name
+---
+bool is_open
+string message
