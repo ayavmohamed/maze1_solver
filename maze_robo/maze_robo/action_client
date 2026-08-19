@@ -7,6 +7,7 @@ from rclpy.action import ActionClient
 
 from maze_interfaces.action import MoveRobot, MoveRobot_yaw
 
+from maze_interfaces.action import MoveRobot_x, MoveRobot_yaw
 
 class MazeActionClient(Node):
     def __init__(self):
@@ -23,13 +24,70 @@ class MazeActionClient(Node):
     def open_wall_with_retry(self, max_attempts=3):
         req = SetBool.Request()
         req.data = True
+        self.move_x_client = ActionClient(self, MoveRobot_x, 'movement_x')
+        self.move_yaw_client = ActionClient(self, MoveRobot_yaw, 'movement_yaw')
+
+        while not self.wall_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for /toggle_walls_1_2 service...')
+
+    def sync_door_state(self, state: bool):
+        if self.door_sync_client.wait_for_service(timeout_sec=1.0):
+            req = SetBool.Request()
+            req.data = state
+            self.door_sync_client.call_async(req)
+
+    def send_move_x(self, target_distance: float) -> bool:
+        if not self.move_x_client.wait_for_server(timeout_sec=2.0):
+            self.get_logger().error('movement_x action server not available!')
+            return False
+
+        goal_msg = MoveRobot_x.Goal()
+        goal_msg.target = target_distance
+
+        send_goal_future = self.move_x_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('Goal rejected by movement_x server')
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        return result_future.result().result.success
+
+    def send_move_yaw(self, target_angle: float) -> bool:
+        if not self.move_yaw_client.wait_for_server(timeout_sec=2.0):
+            self.get_logger().error('movement_yaw action server not available!')
+            return False
+
+        goal_msg = MoveRobot_yaw.Goal()
+        goal_msg.angle = target_angle
+
+        send_goal_future = self.move_yaw_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('Goal rejected by movement_yaw server')
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        return result_future.result().result.success
+
+    def open_wall_with_retry(self, max_attempts=3) -> bool:
+        req = SetBool.Request()
+        req.data = True
+
         for attempt in range(1, max_attempts + 1):
             self.get_logger().info(f'Attempt {attempt} to open wall...')
             future = self.wall_client.call_async(req)
             rclpy.spin_until_future_complete(self, future)
             response = future.result()
             if response is not None and response.success:
-                self.get_logger().info(f'Wall opened successfully: {response.message}')
+                self.get_logger().info(f'Wall opened: {response.message}')
+                self.sync_door_state(True)
                 return True
             self.get_logger().warn(f'Attempt {attempt} failed. Retrying in 1 second...')
             time.sleep(1.0)
