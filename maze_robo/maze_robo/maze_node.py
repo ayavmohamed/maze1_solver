@@ -21,6 +21,8 @@ class MazeNode(Node):
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
+        self.last_odom_time = self.get_clock().now()
+        self.odom_timeout=1.0
 
         # Allow odometry callback and action callbacks
         # to run at the same time.
@@ -67,6 +69,8 @@ class MazeNode(Node):
     def odom_cb(self, msg):
         """Update robot position and yaw from odometry."""
 
+        self.last_odom_time = self.get_clock().now()
+        
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
 
@@ -76,6 +80,11 @@ class MazeNode(Node):
             2.0 * (q.w * q.z + q.x * q.y),
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
+
+    def odom_is_alive(self):
+        elapsed = (
+        self.get_clock().now() - self.last_odom_time).nanoseconds / 1e9
+        return elapsed <= self.odom_timeout
 
     def execute_x(self, goal_handle):
         """Move the robot forward or backward."""
@@ -95,7 +104,15 @@ class MazeNode(Node):
         cmd = Twist()
         cmd.linear.x = math.copysign(0.5, target)
 
+
         while rclpy.ok():
+
+            if not self.odom_is_alive():
+                self.cmd_pub.publish(Twist())
+                goal_handle.abort()
+                return MoveRobotX.Result(
+                    success=False,
+                    message='Odometry timeout. Movement aborted.')
 
             traveled = math.hypot(
                 self.x - start_x,
@@ -150,7 +167,15 @@ class MazeNode(Node):
         cmd = Twist()
         cmd.angular.z = math.copysign(0.4, target)
 
+
         while rclpy.ok():
+
+            if not self.odom_is_alive():
+                self.cmd_pub.publish(Twist())
+                goal_handle.abort()
+                return RotateRobotYaw.Result(
+                    success=False,
+                    message='Odometry timeout. Rotation aborted.')
 
             turned = abs(
                 self.normalize_angle(
