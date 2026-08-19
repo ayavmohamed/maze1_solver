@@ -10,6 +10,7 @@ from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from maze_interfaces.action import MoveRobotX, RotateRobotYaw
 
 
@@ -209,6 +210,9 @@ class MazeNode(Node):
         )
 
 
+
+
+
 def main(args=None):
     rclpy.init(args=args)
 
@@ -219,17 +223,18 @@ def main(args=None):
 
     try:
         executor.spin()
-
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
-
     finally:
-        node.cmd_pub.publish(Twist())
+        # Publish zero velocity BEFORE shutting down the executor or rclpy context
+        if rclpy.ok():
+            node.cmd_pub.publish(Twist())
 
         executor.shutdown()
         node.destroy_node()
 
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
