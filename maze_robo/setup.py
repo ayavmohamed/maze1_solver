@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'action_client = maze_robo.action_client:main',
+
         ],
     },
 )
