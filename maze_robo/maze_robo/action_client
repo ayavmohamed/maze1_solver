@@ -2,43 +2,120 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_srvs.srv import SetBool
+from rclpy.action import ActionClient
+
+
+from maze_interfaces.action import MoveRobot, MoveRobotYaw
+
 
 class MazeActionClient(Node):
     def __init__(self):
         super().__init__('maze_action_client')
-        
+
         self.wall_client = self.create_client(SetBool, '/toggle_walls_1_2')
-        
         while not self.wall_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Waiting for /toggle_walls_1_2 service...')
+
+        # ADDED: action clients for your movement servers
+        self.move_x_client = ActionClient(self, MoveRobot, 'movement_x')
+        self.move_yaw_client = ActionClient(self, MoveRobotYaw, 'movement_yaw')
 
     def open_wall_with_retry(self, max_attempts=3):
         req = SetBool.Request()
         req.data = True
-        
         for attempt in range(1, max_attempts + 1):
             self.get_logger().info(f'Attempt {attempt} to open wall...')
             future = self.wall_client.call_async(req)
             rclpy.spin_until_future_complete(self, future)
-            
             response = future.result()
             if response is not None and response.success:
                 self.get_logger().info(f'Wall opened successfully: {response.message}')
                 return True
-            
             self.get_logger().warn(f'Attempt {attempt} failed. Retrying in 1 second...')
             time.sleep(1.0)
-            
         self.get_logger().error('Failed to open wall after 3 attempts. Stopping robot.')
         return False
 
+    # ADDED: send a goal to movement_x and wait for the result
+    def move_x(self, distance):
+        self.get_logger().info(f'Sending move_x goal: {distance} m')
+
+        if not self.move_x_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('movement_x action server not available')
+            return False
+
+        goal_msg = MoveRobot.Goal()
+        goal_msg.distance = distance  
+
+        send_goal_future = self.move_x_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('move_x goal rejected')
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        result = result_future.result().result
+
+        if result.success:
+            self.get_logger().info(f'move_x succeeded: {result.message}')
+        else:
+            self.get_logger().error(f'move_x failed: {result.message}')
+
+        return result.success
+
+    
+    def rotate_yaw(self, angle):
+        self.get_logger().info(f'Sending rotate_yaw goal: {angle} rad')
+
+        if not self.move_yaw_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('movement_yaw action server not available')
+            return False
+
+        goal_msg = MoveRobotYaw.Goal()
+        goal_msg.angle = angle  
+
+        send_goal_future = self.move_yaw_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('rotate_yaw goal rejected')
+            return False
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        result = result_future.result().result
+
+        if result.success:
+            self.get_logger().info(f'rotate_yaw succeeded: {result.message}')
+        else:
+            self.get_logger().error(f'rotate_yaw failed: {result.message}')
+
+        return result.success
+
+    
     def solve_maze(self):
         self.get_logger().info('Starting solve_maze sequence...')
-        
-        if self.open_wall_with_retry():
-            self.get_logger().info('Moving forward through the open wall...')
-        else:
+
+        if not self.open_wall_with_retry():
             self.get_logger().error('Stopping execution due to wall service failure.')
+            return
+
+        self.get_logger().info('Moving forward through the open wall...')
+        if not self.move_x(0.5):
+            self.get_logger().error('move_x failed, stopping sequence.')
+            return
+
+        
+        if not self.rotate_yaw(1.5708):  # 90 degrees
+            self.get_logger().error('rotate_yaw failed, stopping sequence.')
+            return
+
+        self.get_logger().info('solve_maze sequence complete.')
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -46,6 +123,7 @@ def main(args=None):
     client.solve_maze()
     client.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
