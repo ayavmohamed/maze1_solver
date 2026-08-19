@@ -5,7 +5,7 @@ from std_srvs.srv import SetBool
 from rclpy.action import ActionClient
 
 
-from maze_interfaces.action import MoveRobot, MoveRobotYaw
+from maze_interfaces.action import MoveRobot, MoveRobot_yaw
 
 
 class MazeActionClient(Node):
@@ -18,7 +18,7 @@ class MazeActionClient(Node):
 
         # ADDED: action clients for your movement servers
         self.move_x_client = ActionClient(self, MoveRobot, 'movement_x')
-        self.move_yaw_client = ActionClient(self, MoveRobotYaw, 'movement_yaw')
+        self.move_yaw_client = ActionClient(self, MoveRobot_yaw, 'movement_yaw')
 
     def open_wall_with_retry(self, max_attempts=3):
         req = SetBool.Request()
@@ -74,7 +74,7 @@ class MazeActionClient(Node):
             self.get_logger().error('movement_yaw action server not available')
             return False
 
-        goal_msg = MoveRobotYaw.Goal()
+        goal_msg = MoveRobot_yaw.Goal()
         goal_msg.angle = angle  
 
         send_goal_future = self.move_yaw_client.send_goal_async(goal_msg)
