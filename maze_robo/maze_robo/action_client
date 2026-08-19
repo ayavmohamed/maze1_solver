@@ -4,15 +4,25 @@ from rclpy.node import Node
 from std_srvs.srv import SetBool
 from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
+<<<<<<< HEAD
 from maze_interfaces.action import MoveRobot_x, MoveRobot_yaw
+=======
+from maze_interfaces.action import MoveRobotX, RotateRobotYaw
+
+>>>>>>> main
 
 class MazeActionClient(Node):
     def __init__(self):
         super().__init__('maze_action_client')
         self.wall_client = self.create_client(SetBool, '/toggle_walls_1_2')
         self.door_sync_client = self.create_client(SetBool, '/set_door_state')
+<<<<<<< HEAD
         self.move_x_client = ActionClient(self, MoveRobot_x, 'movement_x')
         self.move_yaw_client = ActionClient(self, MoveRobot_yaw, 'movement_yaw')
+=======
+        self.move_x_client = ActionClient(self, MoveRobotX, 'movement_x')
+        self.move_yaw_client = ActionClient(self, RotateRobotYaw, 'movement_yaw')
+>>>>>>> main
 
         while not self.wall_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('Waiting for /toggle_walls_1_2 service...')
@@ -28,8 +38,13 @@ class MazeActionClient(Node):
             self.get_logger().error('movement_x action server not available!')
             return False
 
+<<<<<<< HEAD
         goal_msg = MoveRobot_x.Goal()
         goal_msg.target = target_distance
+=======
+        goal_msg = MoveRobotX.Goal()
+        goal_msg.distance = target_distance
+>>>>>>> main
 
         send_goal_future = self.move_x_client.send_goal_async(goal_msg)
         rclpy.spin_until_future_complete(self, send_goal_future)
@@ -48,8 +63,13 @@ class MazeActionClient(Node):
             self.get_logger().error('movement_yaw action server not available!')
             return False
 
+<<<<<<< HEAD
         goal_msg = MoveRobot_yaw.Goal()
         goal_msg.angle = target_angle
+=======
+        goal_msg = RotateRobotYaw.Goal()
+        goal_msg.yaw = target_angle
+>>>>>>> main
 
         send_goal_future = self.move_yaw_client.send_goal_async(goal_msg)
         rclpy.spin_until_future_complete(self, send_goal_future)
@@ -99,12 +119,18 @@ class MazeActionClient(Node):
             self.get_logger().info('Maze sequence finished!')
         else:
             self.get_logger().error('Stopping execution due to wall service failure.')
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> main
 def main(args=None):
     rclpy.init(args=args)
     client = MazeActionClient()
     client.solve_maze()
     client.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
