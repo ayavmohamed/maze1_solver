@@ -1,95 +1,213 @@
-# Maze Control — Quick Setup
+# Task 7 - Autonomous Maze Solver
 
-Get the maze simulation built and running. Assumes you already have **ROS 2
-Jazzy** installed on **Ubuntu 24.04**.
+## Overview
 
----
+This project is a ROS 2 maze solver using TurtleBot3 Burger in Gazebo.
 
-## 1. Install Gazebo Harmonic + the ROS↔GZ bridge
+The robot can move autonomously through the maze by:
 
-```bash
-sudo apt update
-sudo apt install -y ros-jazzy-ros-gz
-```
+* Moving forward a specific distance.
+* Rotating by a specific yaw angle.
+* Controlling the red walls/gates using a ROS service.
+* Using "/odom" to measure the robot's movement.
+* Sending velocity commands through "/cmd_vel".
+* Completing the maze automatically using a high-level action client.
 
-Verify:
+The project uses:
 
-```bash
-gz sim --version
-```
-
-You should see Gazebo Sim, version 8.x (Harmonic).
-
----
-
-## 2. Get the package into a workspace
-
-```bash
-mkdir -p ~/training_ws/src
-cd ~/training_ws/src
-git clone https://github.com/eng-Aly/MIA26_phase2_ros_contest.git     
-```
-
-
-## 3. TurtleBot3 Burger support 
-
-this is the robot that being spawned in the simulation so it's important to verify this step worked correctly
-
-```bash
-sudo apt install -y ros-jazzy-turtlebot3-gazebo ros-jazzy-turtlebot3-msgs ros-jazzy-turtlebot3
-```
-
-Verify it's installed correctly
-
-```bash
-ros2 pkg prefix turtlebot3_gazebo
-```
-
-Should print `/opt/ros/jazzy`.
+* ROS 2 Jazzy
+* Gazebo Harmonic
+* TurtleBot3 Burger
+* Python
+* Custom ROS 2 Actions
+* ROS 2 Services
+* ROS 2 Topics
 
 ---
 
-## 5. Build
+## How the System Works
 
-```bash
-cd ~/training_ws
-colcon build 
-source install/setup.bash
-```
+The project is divided into three main parts.
 
-Add that `source` line to your `~/.bashrc` if you don't want to repeat it
-every terminal:
+### 1. Wall Control
 
-```bash
-echo "source ~/training_ws/install/setup.bash" >> ~/.bashrc
-```
+"wall_retraction_service.py"
+
+This node controls the red walls in Gazebo.
+
+The service is:
+
+/toggle_walls_1_2
+
+Service type:
+
+std_srvs/srv/SetBool
+
+When the request is "True":
+
+* Wall 1 goes up.
+* Wall 2 goes down.
+* This opens Gate 1.
+
+When the request is "False":
+
+* Wall 1 goes down.
+* Wall 2 goes up.
+* This opens Gate 2.
 
 ---
 
-## 6. Run it
+### 2. Movement Action Server
 
+"robot_control/action_server.py"
 
-**TurtleBot3 Burger** :
+This node provides two custom Action Servers:
 
-```bash
-ros2 launch maze_control maze_simulation_tb3.launch.py
-```
+/movement_x
+/movement_yaw
 
-Gazebo should open with the maze, the robot sitting at the start.
-your output should look like this
+"movement_x" moves the robot a requested distance.
 
-![Maze with the robot moving](assets/maze_demo.gif)
+It:
+
+* Waits for "/odom".
+* Saves the starting position.
+* Publishes velocity commands on "/cmd_vel".
+* Calculates how far the robot has moved using "/odom".
+* Publishes feedback during movement.
+* Stops when the requested distance is reached.
+* Has timeout and stall handling.
+
+"movement_yaw" works in a similar way for rotation.
+
+It:
+
+* Uses "/odom" to track the robot's yaw.
+* Publishes angular velocity through "/cmd_vel".
+* Provides feedback.
+* Stops when the requested rotation is reached.
+* Handles timeout and missing odometry.
 
 ---
 
-## 7. Solve it 
+### 3. High-Level Action Client
 
-your target is to make the robot reach the end line using actions and
-services — full details in the [challenge brief](assets/challenge_brief).
+"maze_robo/action_client.py"
 
-**note: red walls can move based on services find how to do so**
+This is the main controller of the maze.
 
-![Red walls retracting via service call](assets/walls_demo.gif)
+The important method is:
+
+solve_maze()
+
+It automatically performs the required movement and wall-control operations by calling the action servers and wall service in the correct order.
+
+---
+
+## Custom Interfaces
+
+**MoveRobotX Action**
+
+        float64 distance
+        ---
+        bool success
+        string message
+        ---
+        float64 current_distance
+
+The "distance" is the requested movement distance in meters.
+
+---
+
+**RotateRobotYaw Action**
+
+        float64 yaw
+        ---
+        bool success
+        string message
+        ---
+        float64 current_yaw
+
+The "yaw" is the requested rotation in radians.
+
+For example:
+
+1.5708
+
+is approximately 90 degrees left.
+
+-1.5708
+
+is approximately 90 degrees right.
+
+---
+
+## Building the Workspace
+
+Open a terminal and run:
+
+       cd ~/yourworkspace
+       colcon build --symlink-install
+       source install/setup.bash
+
+If the build is successful, the packages are ready to run.
+
+---
+
+## Running the Project
+
+**You need three terminals.**
+
+#### Terminal 1 - Start Gazebo
+
+       cd ~/training_ws
+       source install/setup.bash
+       ros2 launch maze_control maze_simulation_tb3.launch.py
+
+This starts:
+
+* Gazebo
+* TurtleBot3 Burger
+* Maze world
+* Wall retraction service
+* Maze timer
+
+Wait until the simulation is fully loaded.
+
+---
+
+#### Terminal 2 - Start the Action Server
+
+Open another terminal:
+
+        cd ~/training_ws
+        source install/setup.bash
+        ros2 run robot_control action_server
+
+This node handles:
+
+/movement_x
+/movement_yaw
+
+---
+
+### Terminal 3 - Start the Maze Controller
+
+Open a third terminal:
+
+        cd ~/training_ws
+        source install/setup.bash
+        ros2 run maze_robo action_client
+
+The action client will automatically start solving the maze.
+
+No manual "/cmd_vel" commands are required.
 
 
+#### Important Notes
 
+* Make sure Gazebo is fully running before starting the action server.
+* The action server must be running before starting the action client.
+* Always run "source install/setup.bash" after building the workspace.
+* The robot uses "/odom" for movement and rotation feedback.
+* The final movement distance may need to be adjusted slightly depending on the simulation setup.

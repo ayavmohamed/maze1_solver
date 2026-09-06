@@ -1,5 +1,6 @@
 float64 yaw
 ---
 bool success
+string message
 ---
 float64 current_yaw
