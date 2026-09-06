@@ -1,213 +1,211 @@
-# Task 7 - Autonomous Maze Solver
+# Task 12.2 – Closed-Loop PID Control
 
 ## Overview
 
-This project is a ROS 2 maze solver using TurtleBot3 Burger in Gazebo.
+This task is an upgrade of our previous Task 7.2 Maze Solver.
 
-The robot can move autonomously through the maze by:
+In Task 7.2, the robot used open-loop control. In this task, we will upgrade it to a closed-loop control system using continuous "/odom" feedback and PID controllers.
 
-* Moving forward a specific distance.
-* Rotating by a specific yaw angle.
-* Controlling the red walls/gates using a ROS service.
-* Using "/odom" to measure the robot's movement.
-* Sending velocity commands through "/cmd_vel".
-* Completing the maze automatically using a high-level action client.
+The existing Gazebo simulation, autonomous maze-solving logic, and custom action servers must still work.
 
-The project uses:
+The required action servers are:
 
-* ROS 2 Jazzy
-* Gazebo Harmonic
-* TurtleBot3 Burger
-* Python
-* Custom ROS 2 Actions
-* ROS 2 Services
-* ROS 2 Topics
+- "movement_x"
+- "movement_yaw"
 
 ---
 
-## How the System Works
+## Main Requirements
 
-The project is divided into three main parts.
+The robot must:
 
-### 1. Wall Control
+- Use "/odom" feedback continuously.
+- Dynamically calculate "/cmd_vel".
+- Reach target distances accurately without overshoot.
+- Reach target angles accurately without oscillation.
+- Keep straight during linear movement using heading correction.
+- Support runtime PID parameter tuning.
+- Include a watchdog timer for safety.
 
-"wall_retraction_service.py"
+The required PID controllers are:
 
-This node controls the red walls in Gazebo.
+### 1. Linear Distance PID – Member 2
 
-The service is:
+Modify "movement_x".
 
-/toggle_walls_1_2
+You need to:
 
-Service type:
+- Use "/odom" to calculate the distance error.
+- Implement Linear Distance PID.
+- Dynamically calculate the linear velocity.
+- Stop when the target distance is reached.
 
-std_srvs/srv/SetBool
+Also implement:
 
-When the request is "True":
+- Target Deadzone
+- Integral Anti-Windup
+- Conditional Integration
+- Zero-Crossing Reset
+- Output Clamping
 
-* Wall 1 goes up.
-* Wall 2 goes down.
-* This opens Gate 1.
+### 2. Rotational Yaw PID – Member 3
 
-When the request is "False":
+Modify "movement_yaw".
 
-* Wall 1 goes down.
-* Wall 2 goes up.
-* This opens Gate 2.
+You need to:
+
+- Get the robot yaw from "/odom".
+- Calculate the angular error.
+- Normalize the angle error.
+- Implement Yaw PID.
+- Dynamically calculate angular velocity.
+- Stop accurately at the target angle.
+
+Also implement:
+
+- Target Deadzone
+- Integral Anti-Windup
+- Conditional Integration
+- Zero-Crossing Reset
+- Output Clamping
+- Angle Normalization
+
+### 3. Heading Correction PID – Member 4
+
+Implement heading correction during linear movement.
+
+You need to:
+
+- Save the starting heading.
+- Continuously read the current heading from "/odom".
+- Calculate the heading error.
+- Use PID to calculate an angular correction.
+- Add the correction to the same "/cmd_vel" Twist used for linear movement.
+
+The goal is to keep the robot moving straight and prevent drifting.
+
+### 4. Dynamic Parameters + Watchdog – Member 5
+
+You need to:
+
+- Add dynamic "Kp", "Ki", and "Kd" parameters.
+- Allow PID parameters to be changed at runtime.
+- No recompiling should be required for tuning.
+- No node restart should be required for tuning.
+- Implement a Watchdog Timer.
+- Stop the robot safely if control updates or required feedback stop arriving.
+
+### 5. Integration + Testing – Member 1
+
+Member 1 is responsible for:
+
+- Maintaining the "task12.2" branch.
+- Reviewing team members' work.
+- Merging Pull Requests.
+- Final integration.
+- Building the project.
+- Running Gazebo.
+- Testing the complete maze solver.
+- Fixing integration problems.
 
 ---
 
-### 2. Movement Action Server
+## Git Workflow
 
-"robot_control/action_server.py"
+* The original working Task 7.2 version is on "main".
 
-This node provides two custom Action Servers:
+* The Task 12.2 work is done on: "task12.2"
 
-/movement_x
-/movement_yaw
+### Each team member must create their own branch from task12.2.
 
-"movement_x" moves the robot a requested distance.
+Suggested branches:
 
-It:
+       member2-linear-pid
+       member3-yaw-pid
+       member4-heading-correction
+       member5-params-watchdog
 
-* Waits for "/odom".
-* Saves the starting position.
-* Publishes velocity commands on "/cmd_vel".
-* Calculates how far the robot has moved using "/odom".
-* Publishes feedback during movement.
-* Stops when the requested distance is reached.
-* Has timeout and stall handling.
 
-"movement_yaw" works in a similar way for rotation.
-
-It:
-
-* Uses "/odom" to track the robot's yaw.
-* Publishes angular velocity through "/cmd_vel".
-* Provides feedback.
-* Stops when the requested rotation is reached.
-* Handles timeout and missing odometry.
+Member 1 will work directly on task12.2 for integration and final testing.
 
 ---
 
-### 3. High-Level Action Client
+## How to Get the Repository
 
-"maze_robo/action_client.py"
+### 1. If you already have the repository
 
-This is the main controller of the maze.
+If you already have "maze1_solver" on your computer:
 
-The important method is:
+        cd maze1_solver
+        git fetch
+        git checkout task12.2
+        git pull
+        git checkout -b yourbranch_name
+        git push -u yourbranch_name
 
-solve_maze()
+### 2. If this is your first time downloading the repository
 
-It automatically performs the required movement and wall-control operations by calling the action servers and wall service in the correct order.
 
----
-
-## Custom Interfaces
-
-**MoveRobotX Action**
-
-        float64 distance
-        ---
-        bool success
-        string message
-        ---
-        float64 current_distance
-
-The "distance" is the requested movement distance in meters.
+        git clone https://github.com/ayavmohamed/maze1_solver.git
+        cd maze1_solver
+        git checkout task12.2
+        git pull
+        git checkout -b yourbranch_name
+        git push -u origin yourbranch_name
 
 ---
 
-**RotateRobotYaw Action**
+## Before Starting Work
 
-        float64 yaw
-        ---
-        bool success
-        string message
-        ---
-        float64 current_yaw
+Always make sure you are on your assigned branch:
 
-The "yaw" is the requested rotation in radians.
+         git branch
+
+The branch with "*" is your current branch.
+
+**Do not work directly on "main"!**
+
+---
+
+## Saving and Uploading Your Work
+
+After making your changes:
+
+        git add .
+        git commit -m "Describe your changes"
+        git push
+
+Then go to GitHub and create a Pull Request:
+Your branch → task12.2
+
+Do not push directly to "main".
+
+---
+
+## Pull Request
+When you finish your part:
+
+1. Push your branch to GitHub.
+2. Open a Pull Request.
+3. The base branch must be "task12.2".
+4. Your branch should be the compare branch.
+5. Explain briefly what you changed.
 
 For example:
 
-1.5708
+"member2-linear-pid" → "task12.2"
 
-is approximately 90 degrees left.
-
--1.5708
-
-is approximately 90 degrees right.
+Do not make a Pull Request directly to "main".
 
 ---
 
-## Building the Workspace
+## Important
 
-Open a terminal and run:
+- Each member works only on their assigned branch.
+- Do not delete or rename the assigned branches.
+- Do not push directly to "main".
+- Do not create another branch unless the team agrees.
+- Keep the existing Task 7.2 functionality working.
+- Test your changes before creating the Pull Request.
 
-       cd ~/yourworkspace
-       colcon build --symlink-install
-       source install/setup.bash
-
-If the build is successful, the packages are ready to run.
-
----
-
-## Running the Project
-
-**You need three terminals.**
-
-#### Terminal 1 - Start Gazebo
-
-       cd ~/training_ws
-       source install/setup.bash
-       ros2 launch maze_control maze_simulation_tb3.launch.py
-
-This starts:
-
-* Gazebo
-* TurtleBot3 Burger
-* Maze world
-* Wall retraction service
-* Maze timer
-
-Wait until the simulation is fully loaded.
-
----
-
-#### Terminal 2 - Start the Action Server
-
-Open another terminal:
-
-        cd ~/training_ws
-        source install/setup.bash
-        ros2 run robot_control action_server
-
-This node handles:
-
-/movement_x
-/movement_yaw
-
----
-
-### Terminal 3 - Start the Maze Controller
-
-Open a third terminal:
-
-        cd ~/training_ws
-        source install/setup.bash
-        ros2 run maze_robo action_client
-
-The action client will automatically start solving the maze.
-
-No manual "/cmd_vel" commands are required.
-
-
-#### Important Notes
-
-* Make sure Gazebo is fully running before starting the action server.
-* The action server must be running before starting the action client.
-* Always run "source install/setup.bash" after building the workspace.
-* The robot uses "/odom" for movement and rotation feedback.
-* The final movement distance may need to be adjusted slightly depending on the simulation setup.
+The final integrated and tested version will be on "task12.2" before it is merged into "main".
