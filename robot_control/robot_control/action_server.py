@@ -12,15 +12,10 @@ from nav_msgs.msg import Odometry
 
 from maze_interfaces.action import MoveRobotX, RotateRobotYaw
 
-# ================================================================
 # MEMBER 4 - HEADING CORRECTION PID
-# ================================================================
-#
 # Implementation lives in its own module (heading_correction_pid.py)
 
-
 from .heading_correction_pid import HeadingCorrectionPID, normalize_angle
-
 
 def get_yaw(odom):
     q = odom.pose.pose.orientation
@@ -29,7 +24,6 @@ def get_yaw(odom):
     cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
 
     return math.atan2(siny, cosy)
-
 
 class MovementServer(Node):
 
@@ -89,7 +83,6 @@ class MovementServer(Node):
     
     # MEMBER 2 - LINEAR DISTANCE PID
     # (+ MEMBER 4 - HEADING CORRECTION PID injected below)
-    # ============================================================
 
     async def execute_move_x(self, goal_handle):
 
@@ -97,9 +90,7 @@ class MovementServer(Node):
 
         result = MoveRobotX.Result()
 
-        
         # Wait for odometry
-
         start_wait = self.get_current_time_sec()
 
         while self.odom is None:
@@ -119,6 +110,7 @@ class MovementServer(Node):
 
             time.sleep(0.05)
 
+       
         # Starting position
         start_x = self.odom.pose.pose.position.x
         start_y = self.odom.pose.pose.position.y
@@ -133,9 +125,8 @@ class MovementServer(Node):
 
         target = goal_handle.request.distance
 
+        
         # No movement required
-
-
         if target == 0.0:
 
             goal_handle.succeed()
@@ -145,10 +136,7 @@ class MovementServer(Node):
 
             return result
 
-
         # Target information
-
-
         target_distance = abs(target)
 
         # +1 for forward
@@ -191,10 +179,7 @@ class MovementServer(Node):
         # END OF MEMBER 5 SECTION
         # ========================================================
 
-        # --------------------------------------------------------
         # PID state variables (linear)
-        # --------------------------------------------------------
-
         integral = 0.0
 
         previous_error = target_distance
@@ -203,8 +188,6 @@ class MovementServer(Node):
 
 
         # MEMBER 4 - Heading correction controller instance
-        # --------------------------------------------------------
-
         heading_pid = HeadingCorrectionPID(
             kp=heading_Kp,
             ki=heading_Ki,
@@ -213,32 +196,24 @@ class MovementServer(Node):
             integral_limit=0.3,
             output_limit=0.3
         )
-
         feedback = MoveRobotX.Feedback()
 
         start_time = self.get_current_time_sec()
-
         last_progress = 0.0
         last_progress_time = self.get_current_time_sec()
 
-        # --------------------------------------------------------
         # PID CONTROL LOOP
-        # --------------------------------------------------------
-
         while rclpy.ok():
 
             now = self.get_current_time_sec()
 
             # 1. Get current position from /odom
-
             current_x = self.odom.pose.pose.position.x
             current_y = self.odom.pose.pose.position.y
             current_yaw = get_yaw(self.odom)
 
 
             # 2. Calculate traveled distance
-            # ====================================================
-
             distance = math.sqrt(
                 (current_x - start_x) ** 2
                 + (current_y - start_y) ** 2
@@ -246,13 +221,9 @@ class MovementServer(Node):
 
 
             # 3. Calculate error
-            # ====================================================
-
             error = target_distance - distance
 
             # 4. TARGET DEADZONE
-            # ====================================================
-
             if abs(error) < deadzone:
 
                 self.get_logger().info(
@@ -264,40 +235,23 @@ class MovementServer(Node):
                 break
 
             # 5. Calculate dt
-            # ====================================================
-
             dt = now - previous_time
 
             if dt <= 0.0:
                 dt = 0.001
 
             # 6. ZERO-CROSSING RESET
-            # ====================================================
-
             if previous_error * error < 0.0:
 
                 integral = 0.0
 
-            # ====================================================
             # 7. DERIVATIVE
-            # ====================================================
-
             derivative = (error - previous_error) / dt
 
-            # ====================================================
             # 8. CONDITIONAL INTEGRATION
-            # ====================================================
-
             proportional = Kp * error
 
             derivative_term = Kd * derivative
-
-            output_without_integral = (
-                proportional
-                + derivative_term
-                + Ki * integral
-            )
-
             candidate_integral = integral + error * dt
 
             candidate_integral = max(
@@ -323,8 +277,6 @@ class MovementServer(Node):
                 integral = candidate_integral
 
             # 9. FINAL PID OUTPUT (linear)
-            # ====================================================
-
             output = (
                 Kp * error
                 + Ki * integral
@@ -332,17 +284,12 @@ class MovementServer(Node):
             )
 
             # 10. OUTPUT CLAMPING
-            # ====================================================
-
             output = max(
                 0.0,
                 min(output, max_output)
             )
 
-            # ====================================================
             # 11. APPLY DIRECTION
-            # ====================================================
-
             linear_velocity = direction * output
 
             # ====================================================
@@ -362,18 +309,12 @@ class MovementServer(Node):
                 dt
             )
 
-            # ====================================================
             # 12. Publish feedback
-            # ====================================================
-
             feedback.current_distance = distance
 
             goal_handle.publish_feedback(feedback)
 
-            # ====================================================
             # 13. Publish /cmd_vel (linear + heading correction)
-            # ====================================================
-
             twist = Twist()
 
             twist.linear.x = linear_velocity
@@ -381,10 +322,7 @@ class MovementServer(Node):
 
             self.cmd_vel_pub.publish(twist)
 
-            # ====================================================
             # MEMBER 4 - Telemetry
-            # ====================================================
-
             self.get_logger().info(
                 f"[move_x] dist_err={error:.3f} "
                 f"lin_out={linear_velocity:.3f} "
@@ -392,10 +330,7 @@ class MovementServer(Node):
                 f"heading_out={angular_correction:.3f}"
             )
 
-            # ====================================================
             # 14. Progress Watch
-            # ====================================================
-
             if distance - last_progress > 0.005:
 
                 last_progress = distance
@@ -415,11 +350,8 @@ class MovementServer(Node):
                 result.message = "Robot stalled."
 
                 return result
-
-            # ====================================================
-            # 15. Overall Timeout
-            # ====================================================
-
+            
+            # 15. Overall Timeou
             if now - start_time > 30.0:
 
                 self.get_logger().error(
@@ -435,19 +367,13 @@ class MovementServer(Node):
 
                 return result
 
-            # ====================================================
             # 16. Update PID state
-            # ====================================================
-
             previous_error = error
             previous_time = now
 
             time.sleep(0.05)
 
-        # --------------------------------------------------------
         # Stop robot
-        # --------------------------------------------------------
-
         self.stop()
 
         goal_handle.succeed()
@@ -457,10 +383,8 @@ class MovementServer(Node):
 
         return result
 
-    # ============================================================
+    
     # MEMBER 3 - ROTATIONAL YAW
-    # ============================================================
-
     async def execute_move_yaw(self, goal_handle):
 
         self.get_logger().info("move_yaw goal received")
@@ -592,13 +516,9 @@ class MovementServer(Node):
 def main():
 
     rclpy.init()
-
     node = MovementServer()
-
     executor = MultiThreadedExecutor()
-
     executor.add_node(node)
-
     try:
         executor.spin()
 
@@ -610,7 +530,6 @@ def main():
 
         if rclpy.ok():
             rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
