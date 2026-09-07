@@ -97,16 +97,23 @@ You need to:
 
 ### 5. Integration + Testing – Member 1
 
-Member 1 is responsible for:
+Member 1 is responsible for preparing and maintaining the project before and during the Task 12.2 upgrade.
 
-- Maintaining the "task12.2" branch.
-- Reviewing team members' work.
-- Merging Pull Requests.
-- Final integration.
-- Building the project.
-- Running Gazebo.
-- Testing the complete maze solver.
-- Fixing integration problems.
+Responsibilities include:
+
+- Prepare the Task 12.2 repository.
+- Fix and verify the existing Task 7.2 implementation before starting the upgrade.
+- Make sure the original Task 7.2 Gazebo simulation and autonomous maze-solving logic work correctly.
+- Resolve existing Git/code conflicts and integration issues.
+- Create and maintain the "task12.2" branch from the working Task 7.2 version.
+- Review team members' work.
+- Merge Pull Requests into "task12.2".
+- Handle merge conflicts when integrating team members' branches.
+- Build the complete project after integration.
+- Run the Gazebo simulation.
+- Test the complete closed-loop maze solver.
+- Fix integration problems and ensure all Task 12.2 requirements work together.
+- Keep the final "task12.2" branch stable and ready to be merged into "main".
 
 ---
 
