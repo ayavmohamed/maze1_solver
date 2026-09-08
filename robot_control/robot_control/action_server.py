@@ -37,9 +37,38 @@ class MovementServer(Node):
             Twist,
             "/cmd_vel",
             10
+
+        
         )
 
         self.odom = None
+
+        #member 5
+        self.declare_parameter("linear_kp", 1.0)
+        self.declare_parameter("linear_ki", 0.0)
+        self.declare_parameter("linear_kd", 0.1)
+        self.declare_parameter("heading_kp", 1.5)
+        self.declare_parameter("heading_ki", 0.0)
+        self.declare_parameter("heading_kd", 0.15)  
+
+        self.linear_kp = self.get_parameter("linear_kp").value
+        self.linear_ki = self.get_parameter("linear_ki").value
+        self.linear_kd = self.get_parameter("linear_kd").value
+        self.heading_kp = self.get_parameter("heading_kp").value
+        self.heading_ki = self.get_parameter("heading_ki").value
+        self.heading_kd = self.get_parameter("heading_kd").value    
+
+
+        self.last_update_time = self.get_clock().now()
+        self.watchdog_timer = self.create_timer(0.1, self.watchdog_callback)
+
+
+        self.add_on_set_parameters_callback(self.parameter_callback)
+
+        #End of member 5 in this section
+
+
+
 
         cb_group = ReentrantCallbackGroup()
 
@@ -80,6 +109,74 @@ class MovementServer(Node):
     def stop(self):
         self.cmd_vel_pub.publish(Twist())
 
+    # ========================================================
+            # MEMBER 5 WILL MODIFY THIS SECTION
+            # ========================================================
+            #
+            # These are currently fixed values.
+            #
+            # Member 5 should replace them with ROS2 parameters:
+            #
+            #   linear_kp
+            #   linear_ki
+            #   linear_kd
+            #
+            #   heading_kp
+            #   heading_ki
+            #   heading_kd
+            #
+            # and add/update the required Watchdog Timer.
+            #
+            # ========================================================
+    def parameter_callback(self, params):
+        for param in params:
+            if param.name == "linear_kp":
+                self.linear_kp = param.value
+            elif param.name == "linear_ki":
+                self.linear_ki =param.value
+            elif param.name == "linear_kd":
+                self.linear_kd = param.value
+            elif param.name == "heading_kp":
+                self.heading_kp = param.value
+            elif param.name == "heading_ki":
+                self.heading_ki = param.value
+            elif param.name == "heading_kd":
+                self.heading_kd = param.value       
+    
+            result = rclpy.parameter.SetParametersResult()
+            result.successful = True
+            return result
+    
+    def ping_watchdog(self):
+        self.last_update_time = self.get_clock().now()
+    def watchdog_callback(self):
+        self.current_time = self.get_clock().now()
+        elapsed_time = (self.current_time - self.last_update_time).nanoseconds / 1e9
+        if elapsed_time > 0.5:
+            stop_msg = Twist()
+            stop_msg.linear.x = 0.0
+            stop_msg.angular.z = 0.0
+            self.cmd_vel_pub.publish(stop_msg)
+            self.get_logger().warn("Watchdog timeout - stopping robot")
+    
+    
+    
+            #Kp = 1.0
+            #Ki = 0.0
+            #Kd = 0.1
+    
+            #deadzone = 0.02
+            #max_output = 0.5
+            #integral_limit = 1.0
+    
+            #heading_Kp = 1.5
+            #heading_Ki = 0.0
+            #heading_Kd = 0.15
+    
+            # ========================================================
+            # END OF MEMBER 5 SECTION
+            # ==============================================
+
     
     # MEMBER 2 - LINEAR DISTANCE PID
     # (+ MEMBER 4 - HEADING CORRECTION PID injected below)
@@ -109,6 +206,7 @@ class MovementServer(Node):
                 return result
 
             time.sleep(0.05)
+            self.ping_watchdog()
 
        
         # Starting position
@@ -143,42 +241,25 @@ class MovementServer(Node):
         # -1 for backward
         direction = math.copysign(1.0, target)
 
-        # ========================================================
-        # MEMBER 5 WILL MODIFY THIS SECTION
-        # ========================================================
-        #
-        # These are currently fixed values.
-        #
-        # Member 5 should replace them with ROS2 parameters:
-        #
-        #   linear_kp
-        #   linear_ki
-        #   linear_kd
-        #
-        #   heading_kp
-        #   heading_ki
-        #   heading_kd
-        #
-        # and add/update the required Watchdog Timer.
-        #
-        # ========================================================
 
-        Kp = 1.0
-        Ki = 0.0
-        Kd = 0.1
+        #member 5
+
+        Kp = self.linear_kp
+        Ki = self.linear_ki
+        Kd = self.linear_kd
 
         deadzone = 0.02
         max_output = 0.5
         integral_limit = 1.0
 
-        heading_Kp = 1.5
-        heading_Ki = 0.0
-        heading_Kd = 0.15
+        heading_Kp = self.heading_kp
+        heading_Ki = self.heading_ki
+        heading_Kd = self.heading_kd
 
-        # ========================================================
-        # END OF MEMBER 5 SECTION
-        # ========================================================
 
+        #end of member 5 in this section
+
+  
         # PID state variables (linear)
         integral = 0.0
 
@@ -204,6 +285,7 @@ class MovementServer(Node):
 
         # PID CONTROL LOOP
         while rclpy.ok():
+            self.ping_watchdog() #member 5
 
             now = self.get_current_time_sec()
 
