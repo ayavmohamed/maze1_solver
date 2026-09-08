@@ -33,7 +33,8 @@ class MovementServer(Node):
         if not self.has_parameter("use_sim_time"):
             self.declare_parameter("use_sim_time", True)
 
-        self.cmd_vel_pub = self.create_publisher(
+        self.cmd_vel_pub = 
+        self.create_publisher(
             Twist,
             "/cmd_vel",
             10
@@ -50,6 +51,9 @@ class MovementServer(Node):
         self.declare_parameter("heading_kp", 1.5)
         self.declare_parameter("heading_ki", 0.0)
         self.declare_parameter("heading_kd", 0.15)  
+        self.declare_parameter("yaw_kp",1.8)
+        self.declare_parameter("yaw_ki",0.0)
+        self.declare_parameter("yaw_kd",0.2)
 
         self.linear_kp = self.get_parameter("linear_kp").value
         self.linear_ki = self.get_parameter("linear_ki").value
@@ -57,7 +61,9 @@ class MovementServer(Node):
         self.heading_kp = self.get_parameter("heading_kp").value
         self.heading_ki = self.get_parameter("heading_ki").value
         self.heading_kd = self.get_parameter("heading_kd").value    
-
+        self.yaw_kp = self.get_parameter("yaw_kp").value
+        self.yaw_ki = self.get_parameter("yaw_ki").value
+        self.yaw_kd = self.get_parameter("yaw_kd").value
 
         self.last_update_time = self.get_clock().now()
         self.watchdog_timer = self.create_timer(0.1, self.watchdog_callback)
@@ -141,8 +147,14 @@ class MovementServer(Node):
             elif param.name == "heading_ki":
                 self.heading_ki = param.value
             elif param.name == "heading_kd":
-                self.heading_kd = param.value       
-    
+                self.heading_kd = param.value
+            elif param.name == "yaw_kp":
+                self.yaw_kp = param.value
+            elif param.name == "yaw_ki":
+                self.yaw_ki = param.value
+            elif param.name == "yaw_kd":
+                self.yaw_kd = param.value
+
             result = rclpy.parameter.SetParametersResult()
             result.successful = True
             return result
@@ -513,86 +525,186 @@ class MovementServer(Node):
 
         feedback = RotateRobotYaw.Feedback()
 
-        start_time = self.get_current_time_sec()
+        #member 5 
+        # Local yaw PID variables from ROS2 parameters
+        Kp = self.yaw_kp
+        Ki = self.yaw_ki
+        Kd = self.yaw_kd
 
+        deadzone = 0.02
+        max_output = 0.7
+        integral_limit = 1.0
+
+        integral = 0.0
+        target_angle = abs(target)
+        direction = math.copysign(1.0, target)
+
+        previous_error = target_angle
+        previous_time = self.get_current_time_sec()
+
+        feedback = RotateRobotYaw.Feedback()
+        start_time = self.get_current_time_sec()
         last_progress = 0.0
         last_progress_time = self.get_current_time_sec()
 
         while rclpy.ok():
-
+            self.ping_watchdog()
             now = self.get_current_time_sec()
 
-            # Calculate rotation
-            rotated = get_yaw(self.odom) - start_yaw
+            # Calculating current rotated angle relative to start_yaw
+            current_yaw = get_yaw(self.odom)
+            rotated = current_yaw - start_yaw
 
+            # Normalize angle
             if rotated > math.pi:
                 rotated -= 2.0 * math.pi
-
-            if rotated < -math.pi:
+            elif rotated < -math.pi:
                 rotated += 2.0 * math.pi
 
-            rotated = abs(rotated)
+            error = target_angle - abs(rotated)
 
-            # Check progress
-            if rotated - last_progress > 0.005:
-
-                last_progress = rotated
-                last_progress_time = now
-
-            elif now - last_progress_time > 5.0:
-
-                self.get_logger().error(
-                    "move_yaw stalled: no progress"
-                )
-
+            # Deadzone check
+            if abs(error) < deadzone:
                 self.stop()
-
-                goal_handle.abort()
-
-                result.success = False
-                result.message = "Robot rotation stalled."
-
-                return result
-
-            # Check target reached
-            if rotated >= abs(target):
-
                 break
 
-            # Overall timeout
-            if now - start_time > 30.0:
+            dt = now - previous_time
+            if dt <= 0.0:
+                dt = 0.001
 
-                self.get_logger().error(
-                    "move_yaw timed out"
-                )
+            if previous_error * error < 0.0:
+                integral = 0.0
 
+            derivative = (error - previous_error) / dt
+            
+            # Anti-windup clamping
+            candidate_integral = max(-integral_limit, min(integral + error * dt, integral_limit))
+            integral = candidate_integral
+
+            output = (Kp * error) + (Ki * integral) + (Kd * derivative)
+            output = max(0.05, min(output, max_output))  # Minimum speed to overcome friction
+
+            angular_velocity = direction * output
+
+            # Check progress
+            if abs(rotated) - last_progress > 0.002:
+                last_progress = abs(rotated)
+                last_progress_time = now
+            elif now - last_progress_time > 5.0:
+                self.get_logger().error("move_yaw stalled: no progress")
                 self.stop()
-
                 goal_handle.abort()
-
                 result.success = False
-                result.message = "Rotation timed out."
-
+                result.message = "Robot rotation stalled."
                 return result
 
-            # Publish feedback
-            feedback.current_yaw = rotated
+            if now - start_time > 30.0:
+                self.get_logger().error("move_yaw timed out")
+                self.stop()
+                goal_handle.abort()
+                result.success = False
+                result.message = "Rotation timed out."
+                return result
+
+            feedback.current_yaw = abs(rotated)
             goal_handle.publish_feedback(feedback)
 
-            # Rotate robot
+            twist = Twist()
+            twist.angular.z = angular_velocity
             self.cmd_vel_pub.publish(twist)
 
+            previous_error = error
+            previous_time = now
             time.sleep(0.05)
 
-        # Stop robot
-        self.stop()
 
-        goal_handle.succeed()
 
-        result.success = True
-        result.message = "Rotation completed successfully."
 
-        return result
+
+
+        #end of member 5 in this section
+
+
+        # start_time = self.get_current_time_sec()
+
+        # last_progress = 0.0
+        # last_progress_time = self.get_current_time_sec()
+
+        # while rclpy.ok():
+
+        #     now = self.get_current_time_sec()
+
+        #     # Calculate rotation
+        #     rotated = get_yaw(self.odom) - start_yaw
+
+        #     if rotated > math.pi:
+        #         rotated -= 2.0 * math.pi
+
+        #     if rotated < -math.pi:
+        #         rotated += 2.0 * math.pi
+
+        #     rotated = abs(rotated)
+
+        #     # Check progress
+        #     if rotated - last_progress > 0.005:
+
+        #         last_progress = rotated
+        #         last_progress_time = now
+
+        #     elif now - last_progress_time > 5.0:
+
+        #         self.get_logger().error(
+        #             "move_yaw stalled: no progress"
+        #         )
+
+        #         self.stop()
+
+        #         goal_handle.abort()
+
+        #         result.success = False
+        #         result.message = "Robot rotation stalled."
+
+        #         return result
+
+        #     # Check target reached
+        #     if rotated >= abs(target):
+
+        #         break
+
+        #     # Overall timeout
+        #     if now - start_time > 30.0:
+
+        #         self.get_logger().error(
+        #             "move_yaw timed out"
+        #         )
+
+        #         self.stop()
+
+        #         goal_handle.abort()
+
+        #         result.success = False
+        #         result.message = "Rotation timed out."
+
+        #         return result
+
+        #     # Publish feedback
+        #     feedback.current_yaw = rotated
+        #     goal_handle.publish_feedback(feedback)
+
+        #     # Rotate robot
+        #     self.cmd_vel_pub.publish(twist)
+
+        #     time.sleep(0.05)
+
+        # # Stop robot
+        # self.stop()
+
+        # goal_handle.succeed()
+
+        # result.success = True
+        # result.message = "Rotation completed successfully."
+
+        # return result
 
 
 def main():
