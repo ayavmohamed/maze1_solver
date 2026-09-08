@@ -384,7 +384,7 @@ class MovementServer(Node):
         return result
 
     
-    # MEMBER 3 - ROTATIONAL YAW
+   # MEMBER 3 - ROTATIONAL YAW PID
     async def execute_move_yaw(self, goal_handle):
 
         self.get_logger().info("move_yaw goal received")
@@ -425,33 +425,157 @@ class MovementServer(Node):
 
             return result
 
-        # Direction depends on target sign
-        twist = Twist()
-        twist.angular.z = math.copysign(0.7, target)
+        # Target information
+        target_angle = abs(target)
+
+        # +1 for counter-clockwise, -1 for clockwise
+        direction = math.copysign(1.0, target)
+
+        # ========================================================
+        # MEMBER 5 WILL MODIFY THIS SECTION
+        # ========================================================
+        #
+        # These are currently fixed values.
+        #
+        # Member 5 should replace them with ROS2 parameters:
+        #
+        #   yaw_kp
+        #   yaw_ki
+        #   yaw_kd
+        #
+        # and add/update the required Watchdog Timer.
+        #
+        # ========================================================
+
+        Kp = 1.8
+        Ki = 0.0
+        Kd = 0.2
+
+        deadzone = 0.02          # ~1.1 degrees
+        max_output = 0.7
+        integral_limit = 1.0
+
+        # ========================================================
+        # END OF MEMBER 5 SECTION
+        # ========================================================
+
+        # PID state variables (yaw)
+        integral = 0.0
+
+        previous_error = target_angle
+
+        previous_time = self.get_current_time_sec()
 
         feedback = RotateRobotYaw.Feedback()
 
         start_time = self.get_current_time_sec()
-
         last_progress = 0.0
         last_progress_time = self.get_current_time_sec()
 
+        # PID CONTROL LOOP
         while rclpy.ok():
 
             now = self.get_current_time_sec()
 
-            # Calculate rotation
-            rotated = get_yaw(self.odom) - start_yaw
+            # 1. Get current yaw from /odom
+            current_yaw = get_yaw(self.odom)
 
-            if rotated > math.pi:
-                rotated -= 2.0 * math.pi
+            # 2. ANGLE NORMALIZATION - raw signed diff from start, wrapped to [-pi, pi]
+            rotated_signed = normalize_angle(current_yaw - start_yaw)
 
-            if rotated < -math.pi:
-                rotated += 2.0 * math.pi
+            # Progress made in the requested direction
+            rotated = rotated_signed * direction
 
-            rotated = abs(rotated)
+            # 3. Calculate error
+            error = target_angle - rotated
 
-            # Check progress
+            # 4. TARGET DEADZONE
+            if abs(error) < deadzone:
+
+                self.get_logger().info(
+                    f"Target yaw reached. Error = {error:.4f} rad"
+                )
+
+                self.stop()
+
+                break
+
+            # 5. Calculate dt
+            dt = now - previous_time
+
+            if dt <= 0.0:
+                dt = 0.001
+
+            # 6. ZERO-CROSSING RESET
+            if previous_error * error < 0.0:
+
+                integral = 0.0
+
+            # 7. DERIVATIVE
+            derivative = (error - previous_error) / dt
+
+            # 8. CONDITIONAL INTEGRATION / ANTI-WINDUP
+            proportional = Kp * error
+
+            derivative_term = Kd * derivative
+            candidate_integral = integral + error * dt
+
+            candidate_integral = max(
+                -integral_limit,
+                min(candidate_integral, integral_limit)
+            )
+
+            candidate_output = (
+                proportional
+                + Ki * candidate_integral
+                + derivative_term
+            )
+
+            if (
+                candidate_output > max_output
+                and error > 0.0
+            ):
+
+                integral = integral
+
+            else:
+
+                integral = candidate_integral
+
+            # 9. FINAL PID OUTPUT
+            output = (
+                Kp * error
+                + Ki * integral
+                + Kd * derivative
+            )
+
+            # 10. OUTPUT CLAMPING
+            output = max(
+                0.0,
+                min(output, max_output)
+            )
+
+            # 11. APPLY DIRECTION
+            angular_velocity = direction * output
+
+            # 12. Publish feedback
+            feedback.current_yaw = rotated
+
+            goal_handle.publish_feedback(feedback)
+
+            # 13. Publish /cmd_vel
+            twist = Twist()
+            twist.angular.z = angular_velocity
+
+            self.cmd_vel_pub.publish(twist)
+
+            # Telemetry
+            self.get_logger().info(
+                f"[move_yaw] yaw_err={error:.3f} "
+                f"ang_out={angular_velocity:.3f}"
+            )
+
+            # 14. Progress Watch (stall detection)
             if rotated - last_progress > 0.005:
 
                 last_progress = rotated
@@ -472,12 +596,7 @@ class MovementServer(Node):
 
                 return result
 
-            # Check target reached
-            if rotated >= abs(target):
-
-                break
-
-            # Overall timeout
+            # 15. Overall Timeout
             if now - start_time > 30.0:
 
                 self.get_logger().error(
@@ -493,12 +612,9 @@ class MovementServer(Node):
 
                 return result
 
-            # Publish feedback
-            feedback.current_yaw = rotated
-            goal_handle.publish_feedback(feedback)
-
-            # Rotate robot
-            self.cmd_vel_pub.publish(twist)
+            # 16. Update PID state
+            previous_error = error
+            previous_time = now
 
             time.sleep(0.05)
 
@@ -511,7 +627,6 @@ class MovementServer(Node):
         result.message = "Rotation completed successfully."
 
         return result
-
 
 def main():
 

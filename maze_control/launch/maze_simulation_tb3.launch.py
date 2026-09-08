@@ -57,7 +57,7 @@ def generate_launch_description():
                 ' --gui-config ',
                 LaunchConfiguration('gui_config'),
             ],
-            'output': 'log',
+            'output': 'screen',
         }.items(),
     )
     spawn_robot = Node(
